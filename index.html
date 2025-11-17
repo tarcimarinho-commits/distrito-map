@@ -1,8 +1,125 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-  <head><meta charset="UTF-8" /><title>Distrito Sanitário III</title></head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="utf-8"/>
+  <title>Distrito Sanitário III — USFs</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body,html,#map { height:100%; margin:0; padding:0; font-family: Arial, sans-serif;}
+    #sidebar { position:absolute; left:8px; top:8px; z-index:1000; background:white; padding:10px; border-radius:6px; max-height:80vh; overflow:auto; box-shadow:0 2px 8px rgba(0,0,0,0.2); width:320px;}
+    .btn { display:block; width:100%; margin-bottom:6px; padding:8px; border-radius:4px; border:1px solid #ddd; background:#f7f7f7; cursor:pointer; text-align:left;}
+    .badge-int { display:inline-block; padding:2px 6px; border-radius:12px; background:#1f77b4; color:white; font-size:12px; margin-left:6px;}
+    .badge-ind { display:inline-block; padding:2px 6px; border-radius:12px; background:#ff7f0e; color:white; font-size:12px; margin-left:6px;}
+    .usf-item { margin-bottom:8px; font-size:13px; border-bottom:1px solid #eee; padding-bottom:6px;}
+    a.small { font-size:12px; color:#0066cc; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h3>Distrito Sanitário III — João Pessoa</h3>
+    <div><button class="btn" onclick="showAll()">Mostrar todas</button></div>
+    <div id="bairrosBtns"></div>
+    <hr/>
+    <div id="lista"></div>
+    <div style="font-size:12px;color:#666;margin-top:8px;">Clique em um marcador para abrir o popup (contém link para Google Maps).</div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const USFS = [
+      { name:"Integrada Cidade Verde", neighborhood:"Mangabeira", teams:4, address:"R. Leopoldo Pereira Lima - Mangabeira VIII, João Pessoa - PB, 58059-200", coords:[-7.178889,-34.832222] },
+      { name:"Integrada Mangabeira", neighborhood:"Mangabeira", teams:4, address:"R. Milton Santa Cruz, s/n – CEP: 58056-070", coords:[-7.170278,-34.841667] },
+      { name:"Integrada Nova Aliança", neighborhood:"Mangabeira", teams:3, address:"Rua Nelly Pessoa de Lima, CEP: 58058-825", coords:[-7.169722,-34.834444] },
+      { name:"Integrada Nova Esperança", neighborhood:"Mangabeira", teams:4, address:"Rua Monsenhor Arlindo Bezerra Camboim, s/n CEP 58057-540", coords:[-7.190833,-34.836111] },
+      { name:"Integrada Nova União", neighborhood:"Mangabeira", teams:4, address:"Rua João Francisco Alves, s/n CEP 58057-590", coords:[-7.178056,-34.844444] },
+      { name:"Integrada Quatro Estações", neighborhood:"Mangabeira", teams:4, address:"Rua Jurema Teotônio da Silva – Mangabeira VII – CEP: 58058-235", coords:[-7.1675,-34.830556] },
+      { name:"Integrada Verdes Mares", neighborhood:"Mangabeira", teams:4, address:"Eustáquio da Fonseca, s/n CEP 58078-330", coords:[-7.174444,-34.820833] },
+
+      { name:"Doce Mãe de Deus", neighborhood:"Valentina", teams:1, address:"Rua José Carlos Brandão Valentina CEP 58063-025", coords:[-7.192222,-34.851389] },
+      { name:"Integrada Caminho do Sol", neighborhood:"Valentina", teams:3, address:"Rua Coronel Francisco Monteiro, s/n", coords:[-7.198889,-34.839722] },
+      { name:"Integrada Ipiranga", neighborhood:"Valentina", teams:4, address:"Rua São Luís, Planalto da Boa Esperança, Valentina CEP: 58065-021", coords:[-7.203611,-34.856111] },
+      { name:"Integrada Parque do Sol", neighborhood:"Valentina", teams:2, address:"Rua João Maria de Araújo, CEP: 58076-300", coords:[-7.213611,-34.846111] },
+      { name:"Integrada Rosa de Fátima", neighborhood:"Valentina", teams:4, address:"Rua Oscar Lopes Machado, s/n. Valentina. 58062-030", coords:[-7.209444,-34.839444] },
+      { name:"Integrada Valentina", neighborhood:"Valentina", teams:3, address:"Rua Mariangela Lucena Peixoto, s/n. CEP: 58063-300", coords:[-7.201667,-34.848889] },
+      { name:"Paratibe II", neighborhood:"Valentina", teams:1, address:"Rua Maria Doraci Moreira, s/n Paratibe Valentina CEP 58062-309", coords:[-7.200556,-34.833056] },
+
+      { name:"Integrada Colibris", neighborhood:"José Américo", teams:1, address:"Rua Fernando Torres, s/n. Cidade dos Colibris. CEP: 58059-774", coords:[-7.166389,-34.851667] },
+      { name:"Integrada José Américo", neighborhood:"José Américo", teams:3, address:"Rua Oselmar Castro Barreto, s/n. CEP: 58073-444", coords:[-7.171111,-34.859167] },
+      { name:"Colibris II", neighborhood:"José Américo", teams:1, address:"Rua José Targino de Castro, s/n. Cidade dos Colibris. CEP: 58073-187", coords:[-7.158889,-34.848056] }
+    ];
+
+    const map = L.map('map').setView([-7.18, -34.84], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const markers = [];
+    const group = L.featureGroup().addTo(map);
+
+    function classify(teams){ return teams>1 ? 'Integrada' : 'Individual'; }
+    function colorFor(teams){ return teams>1 ? '#1f77b4' : '#ff7f0e'; }
+
+    USFS.forEach(u => {
+      const circle = L.circleMarker(u.coords, {
+        radius:9, color: colorFor(u.teams), weight:2, fillOpacity:0.9
+      }).addTo(group);
+
+      const popupHtml = `<strong>${u.name}</strong><br/>
+        ${u.address}<br/>
+        Classificação: ${classify(u.teams)}<br/>
+        Equipes: ${u.teams}<br/>
+        Coordenadas: ${u.coords[0]}, ${u.coords[1]}<br/>
+        <a class="small" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${u.coords[0]},${u.coords[1]}">Abrir no Google Maps</a>`;
+
+      circle.bindPopup(popupHtml);
+      circle.usf = u;
+      markers.push(circle);
+    });
+
+    const bairros = [...new Set(USFS.map(u=>u.neighborhood))].sort();
+    const bairrosDiv = document.getElementById('bairrosBtns');
+    bairros.forEach(b=>{
+      const btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = b;
+      btn.onclick = ()=>filterBy(b);
+      bairrosDiv.appendChild(btn);
+    });
+
+    function showAll(){
+      group.clearLayers();
+      markers.forEach(m=>m.addTo(group));
+      map.fitBounds(group.getBounds(), {padding:[30,30]});
+      renderList(markers.map(m=>m.usf));
+    }
+
+    function filterBy(neigh){
+      const filtered = markers.filter(m=>m.usf.neighborhood === neigh);
+      group.clearLayers();
+      filtered.forEach(m=>m.addTo(group));
+      if(filtered.length) map.fitBounds(L.featureGroup(filtered).getBounds(), {padding:[30,30]});
+      renderList(filtered.map(m=>m.usf));
+    }
+
+    function renderList(usfs){
+      const container = document.getElementById('lista');
+      container.innerHTML = '';
+      if(!usfs.length){ container.innerHTML = '<div>Sem USFs encontradas.</div>'; return; }
+      usfs.forEach(u=>{
+        const div = document.createElement('div');
+        div.className = 'usf-item';
+        const badge = u.teams>1 ? '<span class="badge-int">Integrada</span>' : '<span class="badge-ind">Individual</span>';
+        div.innerHTML = `<strong>${u.name}</strong> ${badge}<div style="font-size:13px;color:#444;">${u.address}</div>
+          <div style="font-size:12px;color:#666;">${u.coords[0]}, ${u.coords[1]}</div>
+          <div style="margin-top:4px;"><a class="small" target="_blank" href="https://www.google.com/maps/search/?api=1&query=${u.coords[0]},${u.coords[1]}">Abrir no Google Maps</a></div>`;
+        container.appendChild(div);
+      });
+    }
+
+    showAll();
+  </script>
+</body>
 </html>
